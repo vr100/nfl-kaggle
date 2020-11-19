@@ -17,6 +17,8 @@ NAN_VALUE = "NAN"
 
 NUMERIC_COL = "number"
 
+NORMALIZE_PREFIX = "normalizer"
+
 ## appends new_list to old_list without 
 ## creating duplicates while maintaining existing
 ## order of old_list
@@ -192,7 +194,14 @@ def get_dataframes(data_path, output_path):
 		join_output_path = os.path.join(output_path, "{}.pkl".format(index))
 		join_data.to_pickle(join_output_path)
 		index = index + 1
-		print("Save join data for {} to {}".format(tf, join_output_path))
+		print("Saving join data for {} to {}".format(tf, join_output_path))
+
+	json_data = json.dumps(normalizer, indent=2)
+	normalizer_path = os.path.join(output_path, "{}.json".format(
+		NORMALIZE_PREFIX))
+	with open(normalizer_path, "w") as output:
+		output.write(json_data)
+	print("Saving normalize map to {}".format(normalizer_path))
 
 def parse_args():
 	parser = argparse.ArgumentParser()
