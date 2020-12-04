@@ -1,0 +1,4 @@
+{
+	"ignore_y_values" : ["NAN_VALUE"],
+	"ignore_x_values" : ["NAN_VALUE", "UNKNOWN"]
+}
