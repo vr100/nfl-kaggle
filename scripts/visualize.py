@@ -4,13 +4,18 @@ import os, argparse, json, math
 
 X_FILE = "x.csv"
 Y_PASS_FILE = "y-passResult.csv"
+Y_DEFENSIVE_FILE = "y-isDefensivePI.csv"
+Y_PENALTY_FILE = "y-penaltyOwner.csv"
+Y_FILES = [Y_DEFENSIVE_FILE, Y_PASS_FILE, Y_PENALTY_FILE]
 NORMALIZE_FILE = "normalizer.json"
-PLAY_PASS_PREFIX = "playtype-passresult"
 DPI = 100
 
 NORMALIZE_TYPES = {
 	"playType": "playtypes",
-	"passResult": "results"
+	"passResult": "results",
+	"penaltyOwner": "teamtypes",
+	"typeDropback": "dropbacktypes",
+	"offenseFormation": "formations"
 }
 
 def normalize(data, normalizer):
@@ -26,6 +31,16 @@ def normalize(data, normalizer):
 
 	return data
 
+def plot_and_save_graph(data, output_folder, x_col, y_col):
+	axes = data.plot.bar(stacked=True)
+	plot.xticks(rotation=0)
+
+	prefix = "{}-{}".format(x_col, y_col)
+	output_path = os.path.join(output_folder, "{}.jpg".format(prefix))
+	plot.savefig(output_path)
+	output_path = os.path.join(output_folder, "{}.csv".format(prefix))
+	data.to_csv(output_path)
+
 def visualize(data_folder, output_folder):
 	normalize_path = os.path.join(data_folder, NORMALIZE_FILE)
 	with open(normalize_path, "r") as json_file:
@@ -33,22 +48,18 @@ def visualize(data_folder, output_folder):
 
 	x_path = os.path.join(data_folder, X_FILE)
 	x_data = pd.read_csv(x_path)
-	y_path = os.path.join(data_folder, Y_PASS_FILE)
-	y_data = pd.read_csv(y_path)
-	data = x_data.join(y_data)
-	data = data.groupby(["playType", "passResult"]).size().reset_index(
-		name="count")
-	data = normalize(data, normalize_map)
-	pivot_data = data.pivot_table(values="count", index="playType",
-		columns="passResult")
-
-	axes = pivot_data.plot.bar(stacked=True)
-	plot.xticks(rotation=0)
-
-	output_path = os.path.join(output_folder, "{}.jpg".format(PLAY_PASS_PREFIX))
-	plot.savefig(output_path)
-	output_path = os.path.join(output_folder, "{}.csv".format(PLAY_PASS_PREFIX))
-	pivot_data.to_csv(output_path)
+	for y in Y_FILES:
+		y_path = os.path.join(data_folder, y)
+		y_data = pd.read_csv(y_path)
+		for x_col in x_data.columns:
+			for y_col in y_data.columns:
+				data = x_data.join(y_data)
+				data = data.groupby([x_col, y_col]).size().reset_index(
+					name="count")
+				data = normalize(data, normalize_map)
+				pivot_data = data.pivot_table(values="count", index=x_col,
+					columns=y_col)
+				plot_and_save_graph(pivot_data, output_folder, x_col, y_col)
 
 def parse_args():
 	parser = argparse.ArgumentParser()
