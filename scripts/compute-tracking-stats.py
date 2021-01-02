@@ -145,8 +145,11 @@ def get_stats_for_frame(data, common_stats, stats, frame):
 		stats[cbId] = cb_stats
 	return stats
 
+def is_valid(x):
+	return (x!= NO_VALUE and not math.isnan(x) and x is not None)
+
 def get_mean_variance(data):
-	data = [x for x in data if x != NO_VALUE]
+	data = [x for x in data if is_valid(x)]
 	if len(data) == 0:
 		return 0, 0
 	mean = sum(data) / len(data)
@@ -154,8 +157,8 @@ def get_mean_variance(data):
 	return mean, variance
 
 def get_ratio(num, den):
-	zipped = [(n,d) for (n,d) in zip(num, den) if (n != NO_VALUE and \
-		d != NO_VALUE and d != 0) ]
+	zipped = [(n,d) for (n,d) in zip(num, den) if (is_valid(n) and \
+		is_valid(d) and d != 0 ) ]
 	return [n/d for (n,d) in zipped]
 
 def gather_frame_stats(frame_stats, game, play):
