@@ -1,4 +1,4 @@
-import argparse, os, fnmatch
+import argparse, os, fnmatch, json
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
@@ -6,14 +6,10 @@ from sklearn.metrics import adjusted_rand_score
 # Reference paper - https://arxiv.org/abs/1906.11373
 # "Unsupervised Methods for Identifying Pass Coverage Among Defensive Backs with NFL Player Tracking Data"
 
-
 STATS_PREFIX = "week"
-GROUP_COUNT = 5
+SKIP_COLS_KEY = "global_skip_cols"
 
-GLOBAL_SKIP_COLS = ["gameId", "playId", "nflId", "Unnamed: 0"]
-
-def run_gmm_for_g_and_k(file_data, g, k, skip_cols = []):
-	skip_cols = skip_cols + GLOBAL_SKIP_COLS
+def run_gmm_for_g_and_k(file_data, g, k, skip_cols):
 	file_count = len(file_data)
 	data = pd.DataFrame()
 	for j in range(file_count):
@@ -39,14 +35,15 @@ def run_gmm_for_g_and_k(file_data, g, k, skip_cols = []):
 	# return the computed ari and gmm (skipping k)
 	return (ari, gmm)
 
-def run_gmm_for_group_count(file_data, group_count):
+def run_gmm_for_group_count(file_data, group_count, config):
 	print("Running gmm for group count {}".format(group_count))
 	ari = []
 	gmm = []
 	file_count = len(file_data)
 	for k in range(file_count):
 		# print("Running gmm by leaving out index {}".format(k))
-		(ari_k, gmm_k) = run_gmm_for_g_and_k(file_data, group_count, k)
+		(ari_k, gmm_k) = run_gmm_for_g_and_k(file_data, group_count, k,
+			config[SKIP_COLS_KEY])
 		ari.append(ari_k)
 		gmm.append(gmm_k)
 
@@ -62,17 +59,19 @@ def run_gmm_for_group_count(file_data, group_count):
 	}
 	return result
 
-def run_gmm_feature_influence(file_data, group_count, skip_lowo):
+def run_gmm_feature_influence(file_data, group_count, skip_lowo, config):
 	print("Running gmm for group {}, skipping lowo index: {}".format(
 		group_count, skip_lowo))
 	if len(file_data) == 0:
 		return
-	cols = set(file_data[0].columns) - set(GLOBAL_SKIP_COLS)
+	global_skip_cols = config[SKIP_COLS_KEY]
+	cols = set(file_data[0].columns) - set(global_skip_cols)
 	result = {}
 	for c in cols:
 		print("Skipping feature {}".format(c))
+		skip_cols = global_skip_cols + [c]
 		ari_c, gmm_c = run_gmm_for_g_and_k(file_data, group_count, skip_lowo,
-			skip_cols = [c])
+			skip_cols = skip_cols)
 		result[c] = {
 			"ari": ari_c,
 			"gmm": gmm_c
@@ -99,7 +98,7 @@ def print_group_results(gmm_groups, selected):
 	print("Selected group count: {}, Max ARI: {}".format(selected,
 		gmm_groups[selected]["max_ari"]))
 
-def run_gmm(data_folder):
+def run_gmm(data_folder, config):
 	stats_files = fnmatch.filter(os.listdir(data_folder), "{}*.csv".format(
 		STATS_PREFIX))
 	file_data = []
@@ -110,13 +109,13 @@ def run_gmm(data_folder):
 		file_data.append(stats_data)
 
 	gmm_groups = {}
-	for g in range(2, 10):
-		result = run_gmm_for_group_count(file_data, g)
+	for g in range(config["group_min"], config["group_max"] + 1):
+		result = run_gmm_for_group_count(file_data, g, config)
 		gmm_groups[g] = result
 
 	selected_group = max(gmm_groups, key= lambda x: gmm_groups[x]["total_ari"])
 	gmm_influence_result = run_gmm_feature_influence(file_data, selected_group,
-		gmm_groups[selected_group]["lowo_index"])
+		gmm_groups[selected_group]["lowo_index"], config)
 
 	print_group_results(gmm_groups, selected_group)
 	print_feature_influence_results(gmm_influence_result,
@@ -127,13 +126,19 @@ def parse_args():
 	parser.add_argument(
 		"--data_path", type=str, help="specifies the folder containing data files",
 		required=True)
+	parser.add_argument(
+		"--config_path", type=str, help="json config file", required=True)
 	return vars(parser.parse_args())
 
 def main():
 	args = parse_args()
 	print("Args: {}".format(args))
 	data_path = os.path.abspath(args["data_path"])
+	config_path = os.path.abspath(args["config_path"])
+	with open(config_path) as f:
+		config = json.load(f)
+	print("Config: {}".format(config))
 
-	run_gmm(data_path)
+	run_gmm(data_path, config)
 
 main()

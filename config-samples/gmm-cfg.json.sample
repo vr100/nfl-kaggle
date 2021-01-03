@@ -1,0 +1,10 @@
+{
+	"global_skip_cols": [
+		"gameId",
+		"playId",
+		"nflId",
+		"Unnamed: 0"
+	],
+	"group_min": 2,
+	"group_max": 9
+}
