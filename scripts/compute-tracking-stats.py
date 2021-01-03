@@ -21,11 +21,14 @@ X = "x"
 Y = "y"
 SPEED = "s"
 DIR = "dir"
+EVENT = "event"
 
 HOME_TEAM = "home"
 AWAY_TEAM = "away"
 FOOTBALL = "football"
 CB_VAL = "CB"
+SNAP_EVENT = "ball_snap"
+PASS_EVENTS = ["pass_forward", "pass_shovel"]
 
 S_OFFENSE = "offense"
 S_DEFENSE = "defense"
@@ -38,22 +41,30 @@ S_DIST_DEF = "dist_def"
 S_DIST_OFF_DEF = "dist_between_off_def"
 S_DIR_OFF = "dir_off"
 S_FB_CLOSEST = "closest_to_football"
+S_EVENT = "event"
 
-A_MX = "mean_x"
-A_VX = "var_x"
-A_MY = "mean_y"
-A_VY = "var_y"
-A_MS = "mean_speed"
-A_VS = "var_speed"
-A_MDO = "mean_dist_off"
-A_VDO = "var_dist_off"
-A_MDD = "mean_dist_def"
-A_VDD = "var_dist_def"
-A_MDIRO = "mean_dir_off"
-A_VDIRO = "var_dir_off"
-A_MR = "mean_ratio"
-A_VR = "var_ratio"
+A_X = "x"
+A_Y = "y"
+A_S = "speed"
+A_DO = "dist_off"
+A_DD = "dist_def"
+A_DIRO = "dir_off"
+A_R = "ratio"
 A_CLOSEST = "closest_frames"
+
+A_MEAN_PREFIX = "mean_"
+A_VAR_PREFIX = "var_"
+
+A_BS_PREFIX = "before_snap_"
+A_AS_PREFIX = "after_snap_"
+A_BP_PREFIX = "before_pass_"
+A_AP_PREFIX = "after_pass_"
+A_BSP_PREFIX = "between_snap_pass_"
+A_FULL_PREFIX = "full_"
+
+A_S_PREFIX = "at_snap_"
+A_P_PREFIX = "at_pass_"
+A_M_PREFIX = "at_mid_"
 
 NO_VALUE = -1000
 
@@ -103,7 +114,8 @@ def get_empty_stats():
 		S_DIST_DEF: [],
 		S_DIST_OFF_DEF: [],
 		S_DIR_OFF: [],
-		S_FB_CLOSEST: []
+		S_FB_CLOSEST: [],
+		S_EVENT: []
 	}
 	return stats
 
@@ -121,7 +133,8 @@ def update_stats(stats, player, oPlayer, dPlayer, closest_to_football):
 		S_DIST_DEF: get_dist(player, dPlayer),
 		S_DIST_OFF_DEF: get_dist(oPlayer, dPlayer),
 		S_DIR_OFF: get_dir_diff(oPlayer, player),
-		S_FB_CLOSEST: closest_to_football
+		S_FB_CLOSEST: closest_to_football,
+		S_EVENT: player[EVENT]
 	}
 	append_stats(stats, new_stats)
 
@@ -148,6 +161,40 @@ def get_stats_for_frame(data, common_stats, stats, frame):
 def is_valid(x):
 	return (x!= NO_VALUE and not math.isnan(x) and x is not None)
 
+def split_by_events(data, events):
+	snap_index = events.index(SNAP_EVENT) if SNAP_EVENT in events else - 1
+	for evt in PASS_EVENTS:
+		pass_index = events.index(evt) if evt in events else -1
+		if pass_index != -1:
+			break
+	if snap_index == -1 or pass_index == -1 or pass_index < snap_index:
+		return []
+	before_snap = slice(0, snap_index)
+	between_snap_pass = slice(snap_index, pass_index + 1)
+	after_pass = slice(pass_index + 1, len(data))
+	new_data = [data[before_snap], data[between_snap_pass], data[after_pass]]
+	return new_data
+
+def set_mean_variance(stats, data, events, dataname):
+	split_data = split_by_events(data, events)
+	# before snap, after snap, between snap and pass,
+	# before pass, after pass, full
+	data_map = {
+		A_BS_PREFIX : split_data[0],
+		A_AS_PREFIX: split_data[1] + split_data[2],
+		A_BSP_PREFIX: split_data[1],
+		A_BP_PREFIX: split_data[0] + split_data[1],
+		A_AP_PREFIX: split_data[2],
+		A_FULL_PREFIX: split_data[0] + split_data[1] + split_data[2]
+	}
+
+	for item in data_map:
+		mean,variance = get_mean_variance(data_map[item])
+		item_mean_key = item + A_MEAN_PREFIX + dataname
+		item_var_key = item + A_VAR_PREFIX + dataname
+		stats[item_mean_key] = mean
+		stats[item_var_key] = variance
+
 def get_mean_variance(data):
 	data = [x for x in data if is_valid(x)]
 	if len(data) == 0:
@@ -155,6 +202,24 @@ def get_mean_variance(data):
 	mean = sum(data) / len(data)
 	variance = sum((i - mean) ** 2 for i in data) / len(data)
 	return mean, variance
+
+def set_ratio_mean_variance(stats, num, den, events, dataname):
+	full_ratio = get_ratio(num, den)
+	mean, variance = get_mean_variance(full_ratio)
+	num_split = split_by_events(num, events)
+	den_split = split_by_events(den, events)
+	snap_value =  get_ratio_value(num_split[1][0], den_split[1][0])
+	pass_value = get_ratio_value(num_split[1][-1], den_split[1][-1])
+	mid_index = math.ceil(len(num_split[1]) / 2) - 1
+	mid_value = get_ratio_value(num_split[1][mid_index], den_split[1][mid_index])
+	stats[A_FULL_PREFIX + A_MEAN_PREFIX + dataname] = mean
+	stats[A_FULL_PREFIX + A_VAR_PREFIX + dataname] = variance
+	stats[A_S_PREFIX + dataname] = snap_value
+	stats[A_P_PREFIX + dataname] = pass_value
+	stats[A_M_PREFIX + dataname] = mid_value
+
+def get_ratio_value(n, d):
+	return n/d if (is_valid(n) and is_valid(d) and d != 0) else 0
 
 def get_ratio(num, den):
 	zipped = [(n,d) for (n,d) in zip(num, den) if (is_valid(n) and \
@@ -164,21 +229,25 @@ def get_ratio(num, den):
 def gather_frame_stats(frame_stats, game, play):
 	data = pd.DataFrame()
 	for player in frame_stats:
-		s = {}
-		p = frame_stats[player]
-		s[A_MX], s[A_VX] = get_mean_variance(p[S_X])
-		s[A_MY], s[A_VY] = get_mean_variance(p[S_Y])
-		s[A_MS], s[A_VS] = get_mean_variance(p[S_SPEED])
-		s[A_MDO], s[A_VDO] = get_mean_variance(p[S_DIST_OFF])
-		s[A_MDD], s[A_VDD] = get_mean_variance(p[S_DIST_DEF])
-		s[A_MDIRO], s[A_VDIRO] = get_mean_variance(p[S_DIR_OFF])
-		ratio = get_ratio(p[S_DIST_OFF], p[S_DIST_OFF_DEF])
-		s[A_MR], s[A_VR] = get_mean_variance(ratio)
-		s[NFL_ID] = player
-		s[GAME_ID] = game
-		s[PLAY_ID] = play
-		s[A_CLOSEST] = sum(p[S_FB_CLOSEST])
-		data = data.append(s, ignore_index=True)
+		stats = frame_stats[player]
+		if (not any(x in stats[S_EVENT] for x in PASS_EVENTS)):
+			continue
+		events = stats[S_EVENT]
+		new_stats = {
+			NFL_ID: player,
+			GAME_ID: game,
+			PLAY_ID: play,
+			A_CLOSEST: 	sum(stats[S_FB_CLOSEST])
+		}
+		set_mean_variance(new_stats, stats[S_X], events, A_X)
+		set_mean_variance(new_stats, stats[S_Y], events, A_Y)
+		set_mean_variance(new_stats, stats[S_SPEED], events, A_S)
+		set_mean_variance(new_stats, stats[S_DIST_OFF], events, A_DO)
+		set_mean_variance(new_stats, stats[S_DIST_DEF], events, A_DD)
+		set_mean_variance(new_stats, stats[S_DIR_OFF], events, A_DIRO)
+		set_ratio_mean_variance(new_stats, stats[S_DIST_OFF],
+			stats[S_DIST_OFF_DEF], events, A_R)
+		data = data.append(new_stats, ignore_index=True)
 	return data
 
 def compute_stats_for_play(data, game, play, common_data):
@@ -188,6 +257,7 @@ def compute_stats_for_play(data, game, play, common_data):
 	stats = {}
 	for frame in frames:
 		frame_data = data[data[FRAME_ID] == frame]
+		frame_data = frame_data.sort_values(by=FRAME_ID)
 		get_stats_for_frame(frame_data, common_stats, stats, frame)
 	stats_data = gather_frame_stats(stats, game, play)
 	return stats_data
