@@ -1,4 +1,4 @@
-import argparse, os, fnmatch, json
+import argparse, os, fnmatch, json, joblib
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
@@ -78,27 +78,47 @@ def run_gmm_feature_influence(file_data, group_count, skip_lowo, config):
 		}
 	return result
 
-def print_feature_influence_results(result, ari_with_all):
-	influence = {}
-	for feature in result:
-		influence[feature] = ari_with_all - result[feature]["ari"]
-	influence =  dict(sorted(influence.items(), key=lambda item: item[1],
-		reverse=True))
-	print("Results: (ari with all features: {})".format(ari_with_all))
-	for feature in influence:
-		print("{}: Influence: {}, ari: {}".format(feature, influence[feature],
-			result[feature]["ari"]))
-
-def print_group_results(gmm_groups, selected):
-	groups = sorted(gmm_groups.keys())
-	print("Results: ")
+def save_results(output_folder, gmms, selected_g, influence_aris):
+	groups = sorted(gmms.keys())
+	gmm_result = {}
 	for g in groups:
-		print("{}: Max: {}, Total: {}".format(g, gmm_groups[g]["max_ari"],
-			gmm_groups[g]["total_ari"]))
-	print("Selected group count: {}, Max ARI: {}".format(selected,
-		gmm_groups[selected]["max_ari"]))
+		gmm_result[g] = {k: gmms[g][k] for k in gmms[g].keys() - {"gmm"}}
+	selected_result = gmm_result[selected_g]
+	influence_result = {
+		"group_count": selected_g,
+		"lowo_index": selected_result["lowo_index"],
+		"ari_with_all_features": selected_result["max_ari"]
+	}
+	feature_result = {}
+	influences = {}
+	ari_with_all = selected_result["max_ari"]
+	for feature in influence_aris:
+		ari = influence_aris[feature]["ari"]
+		influences[feature] = {
+			"influence": ari_with_all - ari,
+			"ari": ari
+		}
+	feature_result = dict(sorted(influences.items(),
+		key=lambda item: item[1]["influence"], reverse=True))
+	influence_result["feature_data"] = feature_result
+	output = {
+		"group_data": gmm_result,
+		"selected_group": selected_result,
+		"feature_influence": influence_result
+	}
 
-def run_gmm(data_folder, config):
+	output_path = os.path.join(output_folder, "results.json")
+	json_data = json.dumps(output, indent=2)
+	with open(output_path, "w") as output_file:
+		output_file.write(json_data)
+	print("Result saved to {}".format(output_path))
+
+	selected_gmm = gmms[selected_g]["gmm"]
+	gmm_path = os.path.join(output_folder, "gmm.joblib")
+	joblib.dump(selected_gmm, gmm_path)
+	print("GMM model saved to {}".format(gmm_path))
+
+def run_gmm(data_folder, output_folder, config):
 	stats_files = fnmatch.filter(os.listdir(data_folder), "{}*.csv".format(
 		STATS_PREFIX))
 	file_data = []
@@ -117,9 +137,8 @@ def run_gmm(data_folder, config):
 	gmm_influence_result = run_gmm_feature_influence(file_data, selected_group,
 		gmm_groups[selected_group]["lowo_index"], config)
 
-	print_group_results(gmm_groups, selected_group)
-	print_feature_influence_results(gmm_influence_result,
-		gmm_groups[selected_group]["max_ari"])
+	save_results(output_folder, gmm_groups, selected_group,
+		gmm_influence_result)
 
 def parse_args():
 	parser = argparse.ArgumentParser()
@@ -127,7 +146,11 @@ def parse_args():
 		"--data_path", type=str, help="specifies the folder containing data files",
 		required=True)
 	parser.add_argument(
-		"--config_path", type=str, help="json config file", required=True)
+		"--config_path", type=str, help="specifies the json config file",
+		required=True)
+	parser.add_argument(
+		"--output_path", type=str, help="specifies the output folder path",
+		required=True)
 	return vars(parser.parse_args())
 
 def main():
@@ -135,10 +158,11 @@ def main():
 	print("Args: {}".format(args))
 	data_path = os.path.abspath(args["data_path"])
 	config_path = os.path.abspath(args["config_path"])
+	output_path = os.path.abspath(args["output_path"])
 	with open(config_path) as f:
 		config = json.load(f)
 	print("Config: {}".format(config))
 
-	run_gmm(data_path, config)
+	run_gmm(data_path, output_path, config)
 
 main()
