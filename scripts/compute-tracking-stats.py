@@ -257,7 +257,6 @@ def compute_stats_for_play(data, game, play, common_data):
 	stats = {}
 	for frame in frames:
 		frame_data = data[data[FRAME_ID] == frame]
-		frame_data = frame_data.sort_values(by=FRAME_ID)
 		get_stats_for_frame(frame_data, common_stats, stats, frame)
 	stats_data = gather_frame_stats(stats, game, play)
 	return stats_data
