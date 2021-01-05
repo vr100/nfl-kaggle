@@ -28,6 +28,7 @@ AWAY_TEAM = "away"
 S_OFFENSE = "offense"
 S_DEFENSE = "defense"
 PLAYER_PREFIX = "receiver_"
+DIFF_PREFIX = "diff_"
 
 FRAME_COUNT = 5
 MAX_PLAYERS = 3
@@ -156,6 +157,8 @@ def compute_for_play(data, game, play, common_data):
 	for player in top_closest_players:
 		key = "{}{}".format(PLAYER_PREFIX, count)
 		data_dict[key] = [player]
+		key = "{}{}".format(DIFF_PREFIX, count)
+		data_dict[key] = top_closest_players[player]
 		count += 1
 	if count == 0:
 		return None
