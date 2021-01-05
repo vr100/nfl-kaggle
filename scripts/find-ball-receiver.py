@@ -27,12 +27,16 @@ AWAY_TEAM = "away"
 
 S_OFFENSE = "offense"
 S_DEFENSE = "defense"
-PLAYER_PREFIX = "receiver_"
-DIFF_PREFIX = "diff_"
+PLAYER = "receiver"
+DIFF = "diff"
+DEFENDENT_PREFIX = "def_"
+DEFENDENT_DIST_PREFIX = "def_dist_"
+RANK = "rank"
 
 FRAME_COUNT = 5
-MAX_PLAYERS = 3
+MAX_RECEIVERS = 3
 YARDS_AROUND = 10
+MAX_DEFENDENTS = 2
 
 def get_basename(filename):
 	return os.path.splitext(os.path.basename(filename))[0]
@@ -112,6 +116,32 @@ def distance_diff_from_ball(data, start, end, stats, line):
 	diff_distance = dict(sorted(diff_distance.items(),key=lambda item: item[1]))
 	return diff_distance
 
+def get_nearest(player, players, max_k):
+	x = player[X]
+	y = player[Y]
+	distance = {}
+	for _,p in players.iterrows():
+		px = p[X]
+		py = p[Y]
+		square_dist = float((x - px) ** 2 + (y - py) ** 2)
+		distance[p[NFL_ID]] = square_dist
+	distance = dict(sorted(distance.items(),key=lambda item: item[1]))
+	nearest_k_players = {k: distance[k] for k in list(distance)[:max_k]}
+	return nearest_k_players
+
+def get_closest_defendents(data, players, frame, stats):
+	defense = data[(data[FRAME_ID] == frame) &
+		(data[TEAM_FLD] == stats[S_DEFENSE])]
+	offense = data[(data[FRAME_ID] == frame) &
+		(data[TEAM_FLD] == stats[S_OFFENSE])]
+	closest_defendents = {}
+	for _,player in offense.iterrows():
+		player_id = player[NFL_ID]
+		if player_id not in players:
+			continue
+		closest_defendents[player_id] = get_nearest(player, defense, MAX_DEFENDENTS)
+	return closest_defendents
+
 def compute_for_play(data, game, play, common_data):
 	data = data.sort_values(by=FRAME_ID)
 	stats = find_offense_defense(common_data, game, play)
@@ -145,24 +175,37 @@ def compute_for_play(data, game, play, common_data):
 		stats, ball_line)
 
 	top_closest_players = {k: ball_distance[k] \
-		for k in list(ball_distance)[:MAX_PLAYERS]}
+		for k in list(ball_distance)[:MAX_RECEIVERS]}
+	closest_defendents = get_closest_defendents(data, top_closest_players,
+		pass_frame, stats)
 	data_dict = {
-		GAME_ID: [game],
-		PLAY_ID: [play],
+		GAME_ID: game,
+		PLAY_ID: play,
 		"line_a": ball_line["a"],
 		"line_b": ball_line["b"],
 		"line_c": ball_line["c"]
 	}
+	row_list = []
 	count = 0
 	for player in top_closest_players:
-		key = "{}{}".format(PLAYER_PREFIX, count)
-		data_dict[key] = [player]
-		key = "{}{}".format(DIFF_PREFIX, count)
-		data_dict[key] = top_closest_players[player]
+		player_dict = {
+			RANK: count,
+			PLAYER: player,
+			DIFF: top_closest_players[player]
+		};
+		defendents = closest_defendents[player]
+		def_count = 0
+		for defendent in defendents:
+			key = "{}{}".format(DEFENDENT_PREFIX, def_count)
+			player_dict[key] = defendent
+			key = "{}{}".format(DEFENDENT_DIST_PREFIX, def_count)
+			player_dict[key] = defendents[defendent]
+			def_count += 1
 		count += 1
+		row_list.append({**data_dict, **player_dict})
 	if count == 0:
 		return None
-	return pd.DataFrame.from_dict(data_dict)
+	return pd.DataFrame(row_list)
 
 def compute_for_game(data, game, common_data):
 	plays = sorted(data[PLAY_ID].unique())
