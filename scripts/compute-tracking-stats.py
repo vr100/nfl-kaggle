@@ -22,6 +22,7 @@ Y = "y"
 SPEED = "s"
 DIR = "dir"
 EVENT = "event"
+RANK = "rank"
 
 HOME_TEAM = "home"
 AWAY_TEAM = "away"
@@ -29,6 +30,9 @@ FOOTBALL = "football"
 CB_VAL = "CB"
 SNAP_EVENT = "ball_snap"
 PASS_EVENTS = ["pass_forward", "pass_shovel"]
+
+BR_DEF_FLD = "def_0"
+BR_RECEIVER_FLD = "receiver"
 
 S_OFFENSE = "offense"
 S_DEFENSE = "defense"
@@ -42,6 +46,8 @@ S_DIST_OFF_DEF = "dist_between_off_def"
 S_DIR_OFF = "dir_off"
 S_FB_CLOSEST = "closest_to_football"
 S_EVENT = "event"
+S_BR_CLOSE = "close_to_br"
+S_NOT_CB = "not_cb"
 
 A_X = "x"
 A_Y = "y"
@@ -51,6 +57,12 @@ A_DD = "dist_def"
 A_DIRO = "dir_off"
 A_R = "ratio"
 A_CLOSEST = "closest_frames"
+A_BR_CLOSEST = "close_to_br"
+
+A_VAL_BR_NOT_CLOSE= 0
+A_VAL_BR_CLOSE_CB = 1
+A_VAL_BR_CLOSE_DEF = 2
+A_VAL_BR_CLOSE_CB_DEF = 3
 
 A_MEAN_PREFIX = "mean_"
 A_VAR_PREFIX = "var_"
@@ -115,7 +127,9 @@ def get_empty_stats():
 		S_DIST_OFF_DEF: [],
 		S_DIR_OFF: [],
 		S_FB_CLOSEST: [],
-		S_EVENT: []
+		S_EVENT: [],
+		S_BR_CLOSE: [],
+		S_NOT_CB: []
 	}
 	return stats
 
@@ -123,7 +137,8 @@ def append_stats(stats, new_stats):
 	for s in new_stats:
 		stats[s].append(new_stats[s])
 
-def update_stats(stats, player, oPlayer, dPlayer, closest_to_football):
+def update_stats(stats, player, oPlayer, dPlayer, closest_to_football,
+	close_to_br, not_a_cb):
 	new_stats = {
 		S_X : player[X],
 		S_Y : player[Y],
@@ -134,27 +149,42 @@ def update_stats(stats, player, oPlayer, dPlayer, closest_to_football):
 		S_DIST_OFF_DEF: get_dist(oPlayer, dPlayer),
 		S_DIR_OFF: get_dir_diff(oPlayer, player),
 		S_FB_CLOSEST: closest_to_football,
-		S_EVENT: player[EVENT]
+		S_EVENT: player[EVENT],
+		S_BR_CLOSE: close_to_br,
+		S_NOT_CB: not_a_cb
 	}
 	append_stats(stats, new_stats)
 
-def get_stats_for_frame(data, common_stats, stats, frame):
+def get_stats_for_frame(data, common_stats, stats, frame, br_info):
+	(receiver, closest_defendent) = br_info
 	offense = data[data[TEAM_FLD] == common_stats[S_OFFENSE]]
 	defense = data[data[TEAM_FLD] == common_stats[S_DEFENSE]]
 	cornerback = defense[defense[POSITION_FLD] == CB_VAL]
+	defendent = pd.DataFrame() if closest_defendent is None else \
+		defense[defense[NFL_ID] == closest_defendent]
+	defendents = cornerback if closest_defendent is None or \
+		(len(defendent) != 0 and CB_VAL == defendent[POSITION_FLD].values[0]) \
+		else pd.concat([cornerback, defendent])
 	football = data[data[TEAM_FLD] == FOOTBALL].head(1)
-	nearest_ball = get_nearest(football, cornerback) if len(football) == 1 \
+	nearest_ball = get_nearest(football, defendents) if len(football) == 1 \
 		else None
-	for _,cb in cornerback.iterrows():
+	ball_receiver = data[data[NFL_ID] == receiver].head(1)
+	nearest_cb_to_br = get_nearest(ball_receiver, cornerback) \
+		if len(ball_receiver) == 1 else None
+	for _,cb in defendents.iterrows():
 		defense_without_cb = defense[defense[NFL_ID] != cb[NFL_ID]]
 		nearest_off = get_nearest(cb, offense)
 		nearest_def = get_nearest(cb, defense_without_cb)
 		closest_to_football = 1 if nearest_ball is not None and \
 			(cb[NFL_ID] == nearest_ball[NFL_ID]) else 0
+		close_to_br = 1 if (nearest_cb_to_br is not None and \
+			(cb[NFL_ID] == nearest_cb_to_br[NFL_ID])) or \
+			(cb[NFL_ID] == closest_defendent) else 0
+		not_a_cb = 1 if cb[POSITION_FLD] != CB_VAL else 0
 		cbId = cb[NFL_ID]
 		cb_stats = stats[cbId] if cbId in stats else get_empty_stats()
 		update_stats(cb_stats, cb, nearest_off, nearest_def,
-			closest_to_football)
+			closest_to_football, close_to_br, not_a_cb)
 		stats[cbId] = cb_stats
 	return stats
 
@@ -228,6 +258,10 @@ def get_ratio(num, den):
 
 def gather_frame_stats(frame_stats, game, play):
 	data = pd.DataFrame()
+	not_cb_player = None
+	cb_closest_to_br = None
+	cb_closest_max_value = -1
+	player_stats = {}
 	for player in frame_stats:
 		stats = frame_stats[player]
 		if (not any(x in stats[S_EVENT] for x in PASS_EVENTS)):
@@ -247,32 +281,63 @@ def gather_frame_stats(frame_stats, game, play):
 		set_mean_variance(new_stats, stats[S_DIR_OFF], events, A_DIRO)
 		set_ratio_mean_variance(new_stats, stats[S_DIST_OFF],
 			stats[S_DIST_OFF_DEF], events, A_R)
-		data = data.append(new_stats, ignore_index=True)
+		player_stats[player] = new_stats
+
+		if max(stats[S_NOT_CB]) == 1:
+			not_cb_player = player
+		else:
+			cb_closeness = sum(stats[S_BR_CLOSE])
+			if cb_closeness > cb_closest_max_value:
+				cb_closest_max_value = cb_closeness
+				cb_closest_to_br = player
+
+	for player in player_stats:
+		br_closeness_type = A_VAL_BR_NOT_CLOSE
+		if player == cb_closest_to_br:
+			if not_cb_player is None:
+				br_closeness_type = A_VAL_BR_CLOSE_CB_DEF
+			else:
+				br_closeness_type = A_VAL_BR_CLOSE_CB
+		elif player == not_cb_player:
+			br_closeness_type = A_VAL_BR_CLOSE_DEF
+		player_stats[player][A_BR_CLOSEST] = br_closeness_type
+		data = data.append(player_stats[player], ignore_index=True)
 	return data
 
-def compute_stats_for_play(data, game, play, common_data):
+def get_ball_receiver_info(br_data, game, play):
+	if br_data is None:
+		return (None, None)
+	br_row = br_data[(br_data[GAME_ID] == game) & (br_data[PLAY_ID] == play)]
+	if len(br_row) == 0:
+		return (None, None)
+	return (br_data[BR_RECEIVER_FLD].values[0], br_data[BR_DEF_FLD].values[0])
+
+def compute_stats_for_play(data, game, play, common_data, br_data):
 	frames = sorted(data[FRAME_ID].unique())
 	# print("Total frames: {}".format(len(frames)))
+	br_info = get_ball_receiver_info(br_data, game, play)
 	common_stats = compute_common_stats(common_data, game, play)
 	stats = {}
 	for frame in frames:
 		frame_data = data[data[FRAME_ID] == frame]
-		get_stats_for_frame(frame_data, common_stats, stats, frame)
+		get_stats_for_frame(frame_data, common_stats, stats, frame,
+			br_info)
 	stats_data = gather_frame_stats(stats, game, play)
 	return stats_data
 
-def compute_stats_for_game(data, game, common_data):
+def compute_stats_for_game(data, game, common_data, br_data):
 	plays = sorted(data[PLAY_ID].unique())
 	stats_data = pd.DataFrame()
 	for play in plays:
 		# print("Processing play {} ...".format(play))
 		play_data = data[data[PLAY_ID] == play]
 		play_stats = compute_stats_for_play(play_data, game, play,
-			common_data)
+			common_data, br_data)
 		stats_data = stats_data.append(play_stats, ignore_index=True)
 	return stats_data
 
-def compute_stats_for_file(filename, data_folder, output_folder, common_data):
+def compute_stats_for_file(filename, data_folder, output_folder, common_data,
+	br_data):
 	file_path = os.path.join(data_folder, filename)
 	output_file = os.path.join(output_folder, filename)
 	stats = pd.DataFrame()
@@ -282,11 +347,11 @@ def compute_stats_for_file(filename, data_folder, output_folder, common_data):
 		print("Processing game {} ...".format(game))
 		game_data = data[data[GAME_ID] == game]
 		game_stats = compute_stats_for_game(game_data, game,
-			common_data)
+			common_data, br_data)
 		stats = stats.append(game_stats, ignore_index=True)
 	stats.to_csv(output_file)
 
-def compute_stats(data_folder, output_folder):
+def compute_stats(data_folder, output_folder, br_data):
 	game_file = os.path.join(data_folder, "{}.csv".format(GAME_FILE))
 	play_file = os.path.join(data_folder, "{}.csv".format(PLAY_FILE))
 	game_data = pd.read_csv(game_file)
@@ -297,7 +362,23 @@ def compute_stats(data_folder, output_folder):
 		TRACK_PREFIX))
 	for tf in track_files:
 		print("Working on file {} ...".format(tf))
-		compute_stats_for_file(tf, data_folder, output_folder, common_data)
+		compute_stats_for_file(tf, data_folder, output_folder, common_data,
+			br_data)
+
+def ball_receiver_data(config):
+	if config["br_path"] is None:
+		return None
+	br_folder = os.path.abspath(config["br_path"])
+	br_files = fnmatch.filter(os.listdir(br_folder), "{}*.csv".format(
+		TRACK_PREFIX))
+	data = pd.DataFrame()
+	for br in br_files:
+		file_path = os.path.join(br_folder, br)
+		br_data = pd.read_csv(file_path)
+		data = data.append(br_data)
+	data = data.loc[data.groupby([GAME_ID, PLAY_ID])[RANK].idxmin()].reset_index(
+		drop=True)
+	return data
 
 def parse_args():
 	parser = argparse.ArgumentParser()
@@ -307,6 +388,9 @@ def parse_args():
 	parser.add_argument(
 		"--output_path", type=str, help="specifies the output folder path",
 		required=True)
+	parser.add_argument(
+		"--br_path", type=str, help="specifies the folder containing ball receiver data",
+		required=False)
 	return vars(parser.parse_args())
 
 def main():
@@ -314,7 +398,8 @@ def main():
 	print("Args: {}".format(args))
 	data_path = os.path.abspath(args["data_path"])
 	output_path = os.path.abspath(args["output_path"])
+	br_data = ball_receiver_data(args)
 
-	compute_stats(data_path, output_path)
+	compute_stats(data_path, output_path, br_data)
 
 main()

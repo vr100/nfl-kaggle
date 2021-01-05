@@ -256,6 +256,8 @@ def compute_for_file(filename, data_folder, output_folder, common_data):
 	output_file = os.path.join(output_folder, "{}.json".format(
 		get_basename(filename)))
 	receiver_data.to_json(output_file, orient="records", indent=4)
+	output_file = os.path.join(output_folder, filename)
+	receiver_data.to_csv(output_file)
 
 def compute_ball_receiver(data_folder, output_folder):
 	game_file = os.path.join(data_folder, "{}.csv".format(GAME_FILE))
