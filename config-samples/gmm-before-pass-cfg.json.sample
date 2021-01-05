@@ -72,5 +72,7 @@
 		"full_var_y"
 	],
 	"group_min": 2,
-	"group_max": 5
+	"group_max": 5,
+	"only_closest": 1,
+	"select_group_by": "max_ari"
 }

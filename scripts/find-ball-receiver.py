@@ -117,29 +117,54 @@ def distance_diff_from_ball(data, start, end, stats, line):
 	return diff_distance
 
 def get_nearest(player, players, max_k):
-	x = player[X]
-	y = player[Y]
-	distance = {}
-	for _,p in players.iterrows():
-		px = p[X]
-		py = p[Y]
-		square_dist = float((x - px) ** 2 + (y - py) ** 2)
-		distance[p[NFL_ID]] = square_dist
-	distance = dict(sorted(distance.items(),key=lambda item: item[1]))
-	nearest_k_players = {k: distance[k] for k in list(distance)[:max_k]}
+	player_dict = {}
+	total_frames = 0
+	for _,frame in player.iterrows():
+		total_frames += 1
+		frame_id = frame[FRAME_ID]
+		x = frame[X]
+		y = frame[Y]
+		frame_players= players[players[FRAME_ID] == frame_id]
+		for _,p in frame_players.iterrows():
+			px = p[X]
+			py = p[Y]
+			square_dist = math.sqrt(float((x - px) ** 2 + (y - py) ** 2))
+			player_id = p[NFL_ID]
+			if player_id in player_dict:
+				player_data = player_dict[player_id]
+			else:
+				player_data = {
+					"total": 0,
+					"count": 0
+				}
+			player_data["total"] += square_dist
+			player_data["count"] += 1
+			player_dict[player_id] = player_data
+
+	avg_distance = {}
+	max_frames_expected = total_frames / 2
+	for player in player_dict:
+		player_data = player_dict[player]
+		if player_data["count"]< max_frames_expected:
+			continue
+		avg_distance[player] = player_data["total"] / player_data["count"]
+
+	avg_distance = dict(sorted(avg_distance.items(),key=lambda item: item[1]))
+	nearest_k_players = {k: avg_distance[k] for k in list(avg_distance)[:max_k]}
 	return nearest_k_players
 
 def get_closest_defendents(data, players, frame, stats):
-	defense = data[(data[FRAME_ID] == frame) &
-		(data[TEAM_FLD] == stats[S_DEFENSE])]
-	offense = data[(data[FRAME_ID] == frame) &
-		(data[TEAM_FLD] == stats[S_OFFENSE])]
+	defense = data[data[TEAM_FLD] == stats[S_DEFENSE]]
+	offense = data[data[TEAM_FLD] == stats[S_OFFENSE]]
+	frame_offense = offense[offense[FRAME_ID] == frame]
 	closest_defendents = {}
-	for _,player in offense.iterrows():
+	for _,player in frame_offense.iterrows():
 		player_id = player[NFL_ID]
 		if player_id not in players:
 			continue
-		closest_defendents[player_id] = get_nearest(player, defense, MAX_DEFENDENTS)
+		player_offense = offense[offense[NFL_ID] == player_id]
+		closest_defendents[player_id] = get_nearest(player_offense,
+			defense, MAX_DEFENDENTS)
 	return closest_defendents
 
 def compute_for_play(data, game, play, common_data):

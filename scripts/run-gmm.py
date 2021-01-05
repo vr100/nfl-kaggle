@@ -8,14 +8,20 @@ from sklearn.metrics import adjusted_rand_score
 
 STATS_PREFIX = "week"
 SKIP_COLS_KEY = "global_skip_cols"
+ONLY_CLOSEST_KEY = "only_closest"
+SELECT_GROUP_KEY = "select_group_by"
+GROUP_BY = ["gameId", "playId"]
+MAX_COL = "closest_frames"
 
-def run_gmm_for_g_and_k(file_data, g, k, skip_cols):
+def run_gmm_for_g_and_k(file_data, g, k, skip_cols, only_closest):
 	file_count = len(file_data)
 	data = pd.DataFrame()
 	for j in range(file_count):
 		if j == k:
 			continue
 		data = data.append(file_data[j], ignore_index=True)
+	data = data.loc[data.groupby(GROUP_BY)[MAX_COL].idxmax()].reset_index(
+		drop=True)
 
 	x = data.drop(skip_cols, axis = 1).dropna()
 	gmm = GaussianMixture(n_components=g,
@@ -43,7 +49,7 @@ def run_gmm_for_group_count(file_data, group_count, config):
 	for k in range(file_count):
 		# print("Running gmm by leaving out index {}".format(k))
 		(ari_k, gmm_k) = run_gmm_for_g_and_k(file_data, group_count, k,
-			config[SKIP_COLS_KEY])
+			config[SKIP_COLS_KEY], config[ONLY_CLOSEST_KEY])
 		ari.append(ari_k)
 		gmm.append(gmm_k)
 
@@ -71,19 +77,22 @@ def run_gmm_feature_influence(file_data, group_count, skip_lowo, config):
 		print("Skipping feature {}".format(c))
 		skip_cols = global_skip_cols + [c]
 		ari_c, gmm_c = run_gmm_for_g_and_k(file_data, group_count, skip_lowo,
-			skip_cols = skip_cols)
+			skip_cols, config[ONLY_CLOSEST_KEY])
 		result[c] = {
 			"ari": ari_c,
 			"gmm": gmm_c
 		}
 	return result
 
-def save_results(output_folder, gmms, selected_g, influence_aris):
+def save_results(output_folder, gmms, selected_g, influence_aris, config):
 	groups = sorted(gmms.keys())
 	gmm_result = {}
 	for g in groups:
 		gmm_result[g] = {k: gmms[g][k] for k in gmms[g].keys() - {"gmm"}}
-	selected_result = gmm_result[selected_g]
+	selected_result = { **gmm_result[selected_g] }
+	selected_result["group_count"] = selected_g
+	selected_result["selection_key"] = config[SELECT_GROUP_KEY]
+	selected_result[ONLY_CLOSEST_KEY] = config[ONLY_CLOSEST_KEY]
 	influence_result = {
 		"group_count": selected_g,
 		"lowo_index": selected_result["lowo_index"],
@@ -133,12 +142,13 @@ def run_gmm(data_folder, output_folder, config):
 		result = run_gmm_for_group_count(file_data, g, config)
 		gmm_groups[g] = result
 
-	selected_group = max(gmm_groups, key= lambda x: gmm_groups[x]["total_ari"])
+	group_key = config[SELECT_GROUP_KEY]
+	selected_group = max(gmm_groups, key= lambda x: gmm_groups[x][group_key])
 	gmm_influence_result = run_gmm_feature_influence(file_data, selected_group,
 		gmm_groups[selected_group]["lowo_index"], config)
 
 	save_results(output_folder, gmm_groups, selected_group,
-		gmm_influence_result)
+		gmm_influence_result, config)
 
 def parse_args():
 	parser = argparse.ArgumentParser()

@@ -6,5 +6,7 @@
 		"Unnamed: 0"
 	],
 	"group_min": 2,
-	"group_max": 9
+	"group_max": 9,
+	"only_closest": 1,
+	"select_group_by": "max_ari"
 }
