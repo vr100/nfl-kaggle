@@ -68,6 +68,7 @@
 		"between_snap_pass_var_x",
 		"between_snap_pass_var_y",
 		"closest_frames",
+		"close_to_br",
 		"full_mean_dir_off",
 		"full_mean_dist_def",
 		"full_mean_dist_off",

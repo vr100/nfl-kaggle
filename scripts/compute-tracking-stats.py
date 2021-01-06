@@ -310,7 +310,7 @@ def get_ball_receiver_info(br_data, game, play):
 	br_row = br_data[(br_data[GAME_ID] == game) & (br_data[PLAY_ID] == play)]
 	if len(br_row) == 0:
 		return (None, None)
-	return (br_data[BR_RECEIVER_FLD].values[0], br_data[BR_DEF_FLD].values[0])
+	return (br_row[BR_RECEIVER_FLD].values[0], br_row[BR_DEF_FLD].values[0])
 
 def compute_stats_for_play(data, game, play, common_data, br_data):
 	frames = sorted(data[FRAME_ID].unique())
@@ -375,9 +375,10 @@ def ball_receiver_data(config):
 	for br in br_files:
 		file_path = os.path.join(br_folder, br)
 		br_data = pd.read_csv(file_path)
-		data = data.append(br_data)
+		data = data.append(br_data, ignore_index=True)
 	data = data.loc[data.groupby([GAME_ID, PLAY_ID])[RANK].idxmin()].reset_index(
 		drop=True)
+	print("Ball receiver data loaded, length: {}".format(len(data)))
 	return data
 
 def parse_args():

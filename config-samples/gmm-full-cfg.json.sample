@@ -67,6 +67,7 @@
 	],
 	"group_min": 2,
 	"group_max": 5,
-	"only_closest": 1,
-	"select_group_by": "max_ari"
+	"only_closest": 0,
+	"select_group_by": "max_ari",
+	"close_to_br": [2, 3]
 }

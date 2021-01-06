@@ -9,19 +9,24 @@ from sklearn.metrics import adjusted_rand_score
 STATS_PREFIX = "week"
 SKIP_COLS_KEY = "global_skip_cols"
 ONLY_CLOSEST_KEY = "only_closest"
+CLOSE_TO_BR_KEY = "close_to_br"
 SELECT_GROUP_KEY = "select_group_by"
 GROUP_BY = ["gameId", "playId"]
 MAX_COL = "closest_frames"
 
-def run_gmm_for_g_and_k(file_data, g, k, skip_cols, only_closest):
+def run_gmm_for_g_and_k(file_data, g, k, skip_cols, only_closest, close_to_br):
 	file_count = len(file_data)
 	data = pd.DataFrame()
 	for j in range(file_count):
 		if j == k:
 			continue
 		data = data.append(file_data[j], ignore_index=True)
-	data = data.loc[data.groupby(GROUP_BY)[MAX_COL].idxmax()].reset_index(
-		drop=True)
+
+	if only_closest == 1:
+		data = data.loc[data.groupby(GROUP_BY)[MAX_COL].idxmax()].reset_index(
+			drop=True)
+	elif len(close_to_br) != 0:
+		 data = data[data[CLOSE_TO_BR_KEY].isin(close_to_br)]
 
 	x = data.drop(skip_cols, axis = 1).dropna()
 	gmm = GaussianMixture(n_components=g,
@@ -49,7 +54,8 @@ def run_gmm_for_group_count(file_data, group_count, config):
 	for k in range(file_count):
 		# print("Running gmm by leaving out index {}".format(k))
 		(ari_k, gmm_k) = run_gmm_for_g_and_k(file_data, group_count, k,
-			config[SKIP_COLS_KEY], config[ONLY_CLOSEST_KEY])
+			config[SKIP_COLS_KEY], config[ONLY_CLOSEST_KEY],
+			config[CLOSE_TO_BR_KEY])
 		ari.append(ari_k)
 		gmm.append(gmm_k)
 
@@ -77,7 +83,7 @@ def run_gmm_feature_influence(file_data, group_count, skip_lowo, config):
 		print("Skipping feature {}".format(c))
 		skip_cols = global_skip_cols + [c]
 		ari_c, gmm_c = run_gmm_for_g_and_k(file_data, group_count, skip_lowo,
-			skip_cols, config[ONLY_CLOSEST_KEY])
+			skip_cols, config[ONLY_CLOSEST_KEY], config[CLOSE_TO_BR_KEY])
 		result[c] = {
 			"ari": ari_c,
 			"gmm": gmm_c
@@ -92,7 +98,10 @@ def save_results(output_folder, gmms, selected_g, influence_aris, config):
 	selected_result = { **gmm_result[selected_g] }
 	selected_result["group_count"] = selected_g
 	selected_result["selection_key"] = config[SELECT_GROUP_KEY]
-	selected_result[ONLY_CLOSEST_KEY] = config[ONLY_CLOSEST_KEY]
+	if config[ONLY_CLOSEST_KEY] == 1:
+		selected_result[ONLY_CLOSEST_KEY] = config[ONLY_CLOSEST_KEY]
+	else:
+		selected_result[CLOSE_TO_BR_KEY] = config[CLOSE_TO_BR_KEY]
 	influence_result = {
 		"group_count": selected_g,
 		"lowo_index": selected_result["lowo_index"],
@@ -121,6 +130,12 @@ def save_results(output_folder, gmms, selected_g, influence_aris, config):
 	with open(output_path, "w") as output_file:
 		output_file.write(json_data)
 	print("Result saved to {}".format(output_path))
+
+	output_path = os.path.join(output_folder, "config.json")
+	json_data = json.dumps(config, indent=2)
+	with open(output_path, "w") as output_file:
+		output_file.write(json_data)
+	print("Config saved to {}".format(output_path))
 
 	selected_gmm = gmms[selected_g]["gmm"]
 	gmm_path = os.path.join(output_folder, "gmm.joblib")

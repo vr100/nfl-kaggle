@@ -56,6 +56,7 @@
 		"between_snap_pass_var_x",
 		"between_snap_pass_var_y",
 		"closest_frames",
+		"close_to_br",
 		"full_mean_dir_off",
 		"full_mean_dist_def",
 		"full_mean_dist_off",
@@ -73,6 +74,7 @@
 	],
 	"group_min": 2,
 	"group_max": 5,
-	"only_closest": 1,
-	"select_group_by": "max_ari"
+	"only_closest": 0,
+	"select_group_by": "max_ari",
+	"close_to_br": [2, 3]
 }
