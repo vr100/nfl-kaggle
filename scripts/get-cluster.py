@@ -6,6 +6,8 @@ SKIP_COLS_KEY = "global_skip_cols"
 COLS_TO_ADD = ["gameId", "playId", "nflId"]
 CLUSTER_KEY = "cluster"
 PROB_KEY_PREFIX = "cluster_prob_"
+ONLY_CLOSEST_KEY = "only_closest"
+CLOSE_TO_BR_KEY = "close_to_br"
 
 def get_cluster(gmm, config, data_folder, output_folder):
 	stats_files = fnmatch.filter(os.listdir(data_folder), "{}*.csv".format(
@@ -14,6 +16,12 @@ def get_cluster(gmm, config, data_folder, output_folder):
 		print("Processing stats file: {}".format(f))
 		file_path = os.path.join(data_folder, f)
 		data = pd.read_csv(file_path)
+		if config[ONLY_CLOSEST_KEY] == 1:
+			data = data.loc[data.groupby(GROUP_BY)[MAX_COL].idxmax()].reset_index(
+				drop=True)
+		elif len(config[CLOSE_TO_BR_KEY]) != 0:
+			data = data[data[CLOSE_TO_BR_KEY].isin(config[CLOSE_TO_BR_KEY])]
+
 		x = data.drop(config[SKIP_COLS_KEY], axis = 1)
 		y = gmm.predict(x)
 		y_prob = gmm.predict_proba(x)
