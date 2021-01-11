@@ -8,6 +8,8 @@ CLUSTER_KEY = "cluster"
 PROB_KEY_PREFIX = "cluster_prob_"
 ONLY_CLOSEST_KEY = "only_closest"
 CLOSE_TO_BR_KEY = "close_to_br"
+GROUP_BY = ["gameId", "playId"]
+MAX_COL = "closest_frames"
 
 def get_cluster(gmm, config, data_folder, output_folder):
 	stats_files = fnmatch.filter(os.listdir(data_folder), "{}*.csv".format(
