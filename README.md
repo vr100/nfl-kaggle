@@ -4,6 +4,10 @@ NFL Kaggle
 Kaggle problem link:
 https://www.kaggle.com/c/nfl-big-data-bowl-2021
 
+### Docker setup
+
+The ***nodejs*** docker image from the **ml-docker-setup** repository has the required dependencies to run the scripts
+
 ### compute-tracking-stats.py
 
 	python3 compute-tracking-stats.py --data_path <path-to-nfl-data-downloaded-from-kaggle> --output_path <output-folder-path> --br_path <br-data-folder-path>
