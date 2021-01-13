@@ -6,6 +6,7 @@ arraylength=${#config[@]}
 
 for (( i=1; i<${arraylength}+1; i++ ));
 do
+  mkdir $output_path/${output[$i-1]}/
   cmd="python3 get-cluster.py --data_path $data_path --output_path $output_path/${output[$i-1]}/ --config_path $model_path/${output[$i-1]}/config.json --gmm_path $model_path/${output[$i-1]}/gmm.joblib"
   echo $cmd
   $cmd

@@ -6,6 +6,7 @@ arraylength=${#config[@]}
 
 for (( i=1; i<${arraylength}+1; i++ ));
 do
+  mkdir $output_path/${output[$i-1]}/
   cmd="python3 run-gmm.py --data_path $data_path --output_path $output_path/${output[$i-1]}/ --config_path $config_path/${config[$i-1]}"
   echo $cmd
   $cmd
